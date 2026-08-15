@@ -53,9 +53,11 @@ object AndroidDeviceUtils {
     /**
      * Lazily initializes and retrieves the verified boot hash (vbmeta digest). The value is sourced
      * in the following order:
-     * 1. From the `ro.boot.vbmeta.digest` system property.
-     * 2. From a cached TEE attestation record.
-     * 3. As a randomly generated 32-byte value (fallback).
+     * 1. From a cached TEE attestation record.
+     * 2. Computed from the on-device vbmeta partitions (never from `ro.boot.vbmeta.digest`, which is
+     *    corrupted on some devices — upstream #228; this mirrors upstream #233).
+     * 3. From the persistent file cache.
+     * 4. As a randomly generated 32-byte value (fallback).
      */
     val bootHash: ByteArray by lazy {
         initializeBootProperty(
@@ -65,6 +67,8 @@ object AndroidDeviceUtils {
             },
             expectedSize = 32,
             recordSource = { bootHashSource = it },
+            skipProperty = true,
+            computedValueProvider = { VbMeta.computeDigest() },
         )
     }
 
@@ -101,12 +105,16 @@ object AndroidDeviceUtils {
         attestationValueProvider: () -> ByteArray?,
         expectedSize: Int,
         recordSource: (String) -> Unit,
+        skipProperty: Boolean = false,
+        computedValueProvider: (() -> ByteArray?)? = null,
     ): ByteArray {
-        getProperty(propertyName, expectedSize)?.let {
-            SystemLogger.debug("Using $propertyName from system property: ${it.toHex()}")
-            recordSource("system-prop")
-            persistToFile(propertyName, it)
-            return it
+        if (!skipProperty) {
+            getProperty(propertyName, expectedSize)?.let {
+                SystemLogger.debug("Using $propertyName from system property: ${it.toHex()}")
+                recordSource("system-prop")
+                persistToFile(propertyName, it)
+                return it
+            }
         }
 
         try {
@@ -119,6 +127,20 @@ object AndroidDeviceUtils {
             }
         } catch (e: Exception) {
             SystemLogger.error("Failed to get $propertyName from attestation.", e)
+        }
+
+        computedValueProvider?.let { provider ->
+            try {
+                provider()?.let {
+                    SystemLogger.debug("Using $propertyName computed from vbmeta partitions: ${it.toHex()}")
+                    recordSource("computed-vbmeta")
+                    setBootProperty(propertyName, it)
+                    persistToFile(propertyName, it)
+                    return it
+                }
+            } catch (e: Exception) {
+                SystemLogger.error("Failed to compute $propertyName from partitions.", e)
+            }
         }
 
         readFromFile(propertyName, expectedSize)?.let {
