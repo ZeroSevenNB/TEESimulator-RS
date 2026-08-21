@@ -49,6 +49,10 @@ object App {
             // Load the package configuration.
             ConfigurationManager.initialize()
 
+            // Mirror the configured patch levels into the system props so a verifier sees the same
+            // dates the attestation reports — no external PIF needed to keep them coherent.
+            AndroidDeviceUtils.applyPatchLevelProps()
+
             // Initialize and start the appropriate keystore interceptors.
             initializeInterceptors()
 

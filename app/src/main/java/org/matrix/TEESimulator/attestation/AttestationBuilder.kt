@@ -61,14 +61,30 @@ object AttestationBuilder {
      */
     internal fun buildRootOfTrust(originalRootOfTrust: ASN1Encodable?): DERSequence {
         val rootOfTrustElements = arrayOfNulls<ASN1Encodable>(4)
+
+        // Prefer the genuine boot key/hash from the original leaf's RootOfTrust (patch mode), so a
+        // re-rooted real key keeps its real boot identity. Fall back to the device baseline when the
+        // original RoT is missing or carries an all-zero (unlocked) value.
+        val originalRot = originalRootOfTrust?.toASN1Primitive() as? ASN1Sequence
+        val originalBootKey =
+            originalRot
+                ?.getObjectAt(AttestationConstants.ROOT_OF_TRUST_VERIFIED_BOOT_KEY_INDEX)
+                ?.let { (it as? org.bouncycastle.asn1.ASN1OctetString)?.octets }
+                ?.takeIf { it.size == 32 && it.any { b -> b.toInt() != 0 } }
+        val originalBootHash =
+            originalRot
+                ?.getObjectAt(AttestationConstants.ROOT_OF_TRUST_VERIFIED_BOOT_HASH_INDEX)
+                ?.let { (it as? org.bouncycastle.asn1.ASN1OctetString)?.octets }
+                ?.takeIf { it.size == 32 && it.any { b -> b.toInt() != 0 } }
+
         rootOfTrustElements[AttestationConstants.ROOT_OF_TRUST_VERIFIED_BOOT_KEY_INDEX] =
-            DEROctetString(AndroidDeviceUtils.bootKey)
+            DEROctetString(originalBootKey ?: AndroidDeviceUtils.bootKey)
         rootOfTrustElements[AttestationConstants.ROOT_OF_TRUST_DEVICE_LOCKED_INDEX] =
             ASN1Boolean.TRUE // deviceLocked: true, for security
         rootOfTrustElements[AttestationConstants.ROOT_OF_TRUST_VERIFIED_BOOT_STATE_INDEX] =
             ASN1Enumerated(0) // verifiedBootState: Verified
         rootOfTrustElements[AttestationConstants.ROOT_OF_TRUST_VERIFIED_BOOT_HASH_INDEX] =
-            DEROctetString(AndroidDeviceUtils.bootHash)
+            DEROctetString(originalBootHash ?: AndroidDeviceUtils.bootHash)
 
         return DERSequence(rootOfTrustElements)
     }
@@ -162,6 +178,19 @@ object AttestationBuilder {
                 teeEnforced,
             )
         return DERSequence(fields)
+    }
+
+    /**
+     * The INCLUDE_UNIQUE_ID digest for a Rust-generated key, or null when the caller did not request
+     * it. Kept here (not in the native layer) so the HBK never leaves the Kotlin process.
+     */
+    internal fun computeUniqueIdOrNull(
+        params: KeyMintAttestation,
+        uid: Int,
+        creationTimeMs: Long,
+    ): ByteArray? {
+        if (params.includeUniqueId != true || params.attestationChallenge == null) return null
+        return computeUniqueId(creationTimeMs, createApplicationId(uid).octets)
     }
 
     private fun computeUniqueId(creationTimeMs: Long, aaidDer: ByteArray): ByteArray {

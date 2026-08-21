@@ -227,6 +227,46 @@ object AndroidDeviceUtils {
         }
     }
 
+    /**
+     * Mirror the configured patch levels into the system properties so a verifier reading
+     * `ro.build.version.security_patch` / `ro.vendor.build.security_patch` sees the same dates the
+     * attestation reports. Removes the need for an external module (PIF) to keep the props coherent
+     * with the attestation.
+     */
+    fun applyPatchLevelProps() {
+        val config = ConfigurationManager.getGlobalPatchLevel() ?: return
+        val systemValue = config.system ?: config.all ?: return
+        val vendorValue = config.vendor ?: config.all
+
+        resolvePatchPropDate(systemValue)?.let { date ->
+            SystemLogger.info("patch prop: setting ro.build.version.security_patch to $date")
+            setProperty("ro.build.version.security_patch", date)
+        }
+        vendorValue?.let { resolvePatchPropDate(it) }?.let { date ->
+            SystemLogger.info("patch prop: setting ro.vendor.build.security_patch to $date")
+            setProperty("ro.vendor.build.security_patch", date)
+        }
+    }
+
+    /**
+     * Resolve a patch-level config value to a concrete "YYYY-MM-DD" string for the property, or null
+     * when the value means "keep the device's own" (`prop` / `no` / `device_default`).
+     */
+    private fun resolvePatchPropDate(value: String): String? {
+        val v = value.trim()
+        if (v.equals("prop", true) || v.equals("no", true) || v.equals("device_default", true)) {
+            return null
+        }
+        val resolved = resolveDateKeywords(v) // "today" / "YYYY-MM-DD" template -> concrete date
+        return when {
+            resolved.matches(Regex("\\d{4}-\\d{2}-\\d{2}")) -> resolved // YYYY-MM-DD
+            resolved.matches(Regex("\\d{4}-\\d{2}")) -> "$resolved-01" // YYYY-MM -> YYYY-MM-01
+            resolved.matches(Regex("\\d{8}")) -> // YYYYMMDD
+                "${resolved.substring(0, 4)}-${resolved.substring(4, 6)}-${resolved.substring(6, 8)}"
+            else -> null
+        }
+    }
+
     private fun generateRandomBytes(size: Int): ByteArray =
         ByteArray(size).also { ThreadLocalRandom.current().nextBytes(it) }
 
@@ -447,7 +487,13 @@ object AndroidDeviceUtils {
         get() =
             DeviceAttestationService.CachedAttestationData?.osVersion
                 ?: osVersionMap[Build.VERSION.SDK_INT]
-                ?: 160000 // Default to a recent version
+                ?: deriveOsVersionFromRelease()
+
+    /** Fallback for an unmapped future SDK: derive from the Android release major version. */
+    private fun deriveOsVersionFromRelease(): Int {
+        val major = Build.VERSION.RELEASE.split('.').firstOrNull()?.toIntOrNull()
+        return if (major != null && major > 0) major * 10000 else 160000
+    }
 
     private val attestVersionMap =
         mapOf(
@@ -586,7 +632,14 @@ object AndroidDeviceUtils {
     }
 
     private fun parseKeyMintVersions(file: File): List<VintfKeyMintVersion> {
-        val document = DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(file)
+        val dbf = DocumentBuilderFactory.newInstance()
+        runCatching {
+            dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
+            dbf.setFeature("http://xml.org/sax/features/external-general-entities", false)
+            dbf.setFeature("http://xml.org/sax/features/external-parameter-entities", false)
+            dbf.isExpandEntityReferences = false
+        }
+        val document = dbf.newDocumentBuilder().parse(file)
         val root = document.documentElement ?: return emptyList()
 
         return directChildElements(root, "hal").flatMap { hal ->

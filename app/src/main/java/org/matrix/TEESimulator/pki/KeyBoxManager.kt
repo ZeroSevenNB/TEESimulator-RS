@@ -143,6 +143,9 @@ object KeyBoxManager {
         val foundKeys = mutableMapOf<String, KeyBox>()
         val parser =
             XmlPullParserFactory.newInstance().newPullParser().apply {
+                // keybox.xml is user-supplied: refuse DTD/entity processing so a hostile file cannot
+                // trigger entity expansion or external-entity reads.
+                setFeature(XmlPullParser.FEATURE_PROCESS_DOCDECL, false)
                 setInput(StringReader(xmlContent))
             }
 

@@ -72,6 +72,16 @@ pub struct CertGenParams {
     pub boot_key: Vec<u8>,
     pub boot_hash: Vec<u8>,
 
+    /// The INCLUDE_UNIQUE_ID digest, already computed by the Kotlin layer (HMAC-SHA256 over the
+    /// temporal counter + attestation application id + 0x00, truncated to 16 bytes). `None` means the
+    /// caller did not request INCLUDE_UNIQUE_ID, so the extension carries an empty uniqueId.
+    pub unique_id: Option<Vec<u8>>,
+    /// Whether the RootOfTrust reports the device locked. The Kotlin layer supplies the forged
+    /// "locked" value for unlocked devices, so the Rust layer no longer hard-codes it.
+    pub device_locked: bool,
+    /// VerifiedBootState (0 Verified, 1 SelfSigned, 2 Unverified, 3 Failed) to report.
+    pub verified_boot_state: i32,
+
     pub creation_datetime: i64,
     pub attestation_application_id: Vec<u8>,
     pub module_hash: Option<Vec<u8>>,

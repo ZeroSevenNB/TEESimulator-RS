@@ -137,6 +137,9 @@ object ConfigurationManager {
         return packageSpecificPatchLevel ?: globalCustomPatchLevel
     }
 
+    /** The global (non-package-specific) custom patch level, or null when none is configured. */
+    fun getGlobalPatchLevel(): CustomPatchLevel? = globalCustomPatchLevel
+
     /**
      * Loads and parses the `target.txt` file, which defines the processing mode and keybox file for
      * each package.
@@ -268,6 +271,24 @@ object ConfigurationManager {
                 )
                 newGlobalLevel = newGlobalLevel?.copy(boot = "prop", vendor = "prop")
             }
+            // When system is left unset but vendor/boot carry a concrete date, system would fall back
+            // to the (often stale) real device prop while vendor/boot report the configured date — a
+            // cross-component mismatch a verifier flags (vendor/boot ahead of system). Pull system up
+            // to the vendor (or boot) value so all three stay coherent.
+            if (newGlobalLevel != null &&
+                newGlobalLevel.system == null &&
+                newGlobalLevel.all == null
+            ) {
+                val syncRef =
+                    newGlobalLevel.vendor?.takeIf { canSyncPatchLevel(it) }
+                        ?: newGlobalLevel.boot?.takeIf { canSyncPatchLevel(it) }
+                if (syncRef != null) {
+                    SystemLogger.info(
+                        "system unset; syncing system patch level to vendor/boot value '$syncRef' to avoid cross-component mismatch"
+                    )
+                    newGlobalLevel = newGlobalLevel.copy(system = syncRef)
+                }
+            }
             contextLines.remove("") // Remove global context to iterate over packages next
 
             for ((pkg, lines) in contextLines) {
@@ -285,6 +306,18 @@ object ConfigurationManager {
         } catch (e: Exception) {
             SystemLogger.error("Failed to load or parse ${file.name}", e)
         }
+    }
+
+    /**
+     * Whether a patch-level value may be synced across components: a concrete date or a dynamic
+     * keyword that resolves to one. Excludes the special values that mean "don't report / use the
+     * device's own value", which must never be copied onto another component.
+     */
+    private fun canSyncPatchLevel(value: String): Boolean {
+        val v = value.trim()
+        return !v.equals("prop", true) &&
+            !v.equals("no", true) &&
+            !v.equals("device_default", true)
     }
 
     /**

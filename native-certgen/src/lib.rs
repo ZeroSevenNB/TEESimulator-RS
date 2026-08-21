@@ -170,6 +170,9 @@ fn extract_config(env: &mut JNIEnv, config: &JObject) -> Result<CertGenParams> {
     let keybox_cert_chain = get_byte_array(env, config, "keyboxCertChain")?;
     let boot_key = get_byte_array(env, config, "bootKey")?;
     let boot_hash = get_byte_array(env, config, "bootHash")?;
+    let unique_id = get_nullable_byte_array(env, config, "uniqueId")?;
+    let device_locked = get_boolean(env, config, "deviceLocked")?;
+    let verified_boot_state = get_int(env, config, "verifiedBootState")?;
     let attestation_app_id = get_byte_array(env, config, "attestationApplicationId")?;
     let module_hash = get_nullable_byte_array(env, config, "moduleHash")?;
 
@@ -220,6 +223,9 @@ fn extract_config(env: &mut JNIEnv, config: &JObject) -> Result<CertGenParams> {
         boot_patch_level,
         boot_key,
         boot_hash,
+        unique_id,
+        device_locked,
+        verified_boot_state,
         creation_datetime,
         attestation_application_id: attestation_app_id,
         module_hash,

@@ -20,8 +20,10 @@ pub fn build_attestation_extension(params: &CertGenParams) -> Result<Vec<u8>> {
     inner.extend_from_slice(&enc_octet_string(
         params.attestation_challenge.as_deref().unwrap_or(&[]),
     ));
-    // uniqueId — OCTET STRING (always empty)
-    inner.extend_from_slice(&enc_octet_string(&[]));
+    // uniqueId — OCTET STRING (empty when the caller did not request INCLUDE_UNIQUE_ID)
+    inner.extend_from_slice(&enc_octet_string(
+        params.unique_id.as_deref().unwrap_or(&[]),
+    ));
     // softwareEnforced
     inner.extend_from_slice(&sw);
     // teeEnforced
@@ -178,10 +180,10 @@ fn build_root_of_trust(params: &CertGenParams) -> Vec<u8> {
     let mut inner = Vec::new();
     // verifiedBootKey — OCTET STRING (32 bytes)
     inner.extend_from_slice(&enc_octet_string(&params.boot_key));
-    // deviceLocked — BOOLEAN TRUE (0xFF, not 0x01)
-    inner.extend_from_slice(&enc_boolean(true));
-    // verifiedBootState — ENUMERATED 0 (Verified), not INTEGER
-    inner.extend_from_slice(&enc_enumerated(0));
+    // deviceLocked — BOOLEAN (0xFF = true, 0x00 = false), supplied by the Kotlin layer
+    inner.extend_from_slice(&enc_boolean(params.device_locked));
+    // verifiedBootState — ENUMERATED (0 Verified, 1 SelfSigned, 2 Unverified, 3 Failed)
+    inner.extend_from_slice(&enc_enumerated(params.verified_boot_state));
     // verifiedBootHash — OCTET STRING (32 bytes)
     inner.extend_from_slice(&enc_octet_string(&params.boot_hash));
     enc_sequence(&inner)
@@ -626,6 +628,9 @@ mod tests {
             boot_patch_level: 20250301,
             boot_key: vec![0x01; 32],
             boot_hash: vec![0x02; 32],
+            unique_id: None,
+            device_locked: true,
+            verified_boot_state: 0,
             creation_datetime: 1709913600000,
             attestation_application_id: vec![0xDE, 0xAD],
             module_hash: None,

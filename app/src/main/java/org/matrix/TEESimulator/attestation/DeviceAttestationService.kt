@@ -60,6 +60,13 @@ object DeviceAttestationService {
         val osPatchLevel: Int?,
         val vendorPatchLevel: Int?,
         val bootPatchLevel: Int?,
+        // Device-properties attestation, harvested from the real TEE when it reports them.
+        val brand: ByteArray?,
+        val device: ByteArray?,
+        val product: ByteArray?,
+        val manufacturer: ByteArray?,
+        val model: ByteArray?,
+        val serial: ByteArray?,
     )
 
     // A unique alias for the key used to perform the TEE functionality check.
@@ -150,6 +157,13 @@ object DeviceAttestationService {
                     .setAlgorithmParameterSpec(ECGenParameterSpec("secp256r1"))
                     .setDigests(KeyProperties.DIGEST_SHA256)
                     .setAttestationChallenge(challenge)
+                    .apply {
+                        // Harvest the device's real brand/model/… so our forged device-ID attestation
+                        // carries genuine values instead of empty fields (a "no IDs" tell).
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                            setDevicePropertiesAttestationIncluded(true)
+                        }
+                    }
                     .build()
 
             keyPairGenerator.initialize(spec)
@@ -315,6 +329,11 @@ object DeviceAttestationService {
             var osPatchLevel: Int? = null
             var vendorPatchLevel: Int? = null
             var bootPatchLevel: Int? = null
+            var brand: ByteArray? = null
+            var device: ByteArray? = null
+            var product: ByteArray? = null
+            var manufacturer: ByteArray? = null
+            var model: ByteArray? = null
 
             val softwareEnforced =
                 ASN1Sequence.getInstance(
@@ -382,6 +401,21 @@ object DeviceAttestationService {
                                 .positiveValue
                                 .toInt()
                     }
+                    AttestationConstants.TAG_ATTESTATION_ID_BRAND -> {
+                        brand = ASN1OctetString.getInstance(tagged.baseObject.toASN1Primitive()).octets
+                    }
+                    AttestationConstants.TAG_ATTESTATION_ID_DEVICE -> {
+                        device = ASN1OctetString.getInstance(tagged.baseObject.toASN1Primitive()).octets
+                    }
+                    AttestationConstants.TAG_ATTESTATION_ID_PRODUCT -> {
+                        product = ASN1OctetString.getInstance(tagged.baseObject.toASN1Primitive()).octets
+                    }
+                    AttestationConstants.TAG_ATTESTATION_ID_MANUFACTURER -> {
+                        manufacturer = ASN1OctetString.getInstance(tagged.baseObject.toASN1Primitive()).octets
+                    }
+                    AttestationConstants.TAG_ATTESTATION_ID_MODEL -> {
+                        model = ASN1OctetString.getInstance(tagged.baseObject.toASN1Primitive()).octets
+                    }
                 }
             }
 
@@ -406,6 +440,15 @@ object DeviceAttestationService {
                 osPatchLevel,
                 vendorPatchLevel,
                 bootPatchLevel,
+                brand,
+                device,
+                product,
+                manufacturer,
+                model,
+                serial =
+                    android.os.SystemProperties.get("ro.serialno", "")
+                        .takeIf { it.isNotBlank() && it != "unknown" }
+                        ?.toByteArray(),
             )
         } catch (e: Exception) {
             SystemLogger.error("Failed to parse attestation data from certificate.", e)

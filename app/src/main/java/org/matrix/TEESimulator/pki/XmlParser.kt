@@ -39,6 +39,7 @@ class XmlParser(xmlContent: String) {
             val parser =
                 XmlPullParserFactory.newInstance().newPullParser().apply {
                     setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, false)
+                    setFeature(XmlPullParser.FEATURE_PROCESS_DOCDECL, false)
                     setInput(StringReader(sanitizedXml))
                 }
             val tags = path.split('.').toTypedArray()
@@ -112,6 +113,7 @@ class XmlParser(xmlContent: String) {
         val parser =
             XmlPullParserFactory.newInstance().newPullParser().apply {
                 setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, false)
+                setFeature(XmlPullParser.FEATURE_PROCESS_DOCDECL, false)
                 setInput(StringReader(sanitizedXml))
             }
 
