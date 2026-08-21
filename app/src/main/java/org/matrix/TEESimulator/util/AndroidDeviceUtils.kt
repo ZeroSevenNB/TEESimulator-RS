@@ -232,20 +232,39 @@ object AndroidDeviceUtils {
      * `ro.build.version.security_patch` / `ro.vendor.build.security_patch` sees the same dates the
      * attestation reports. Removes the need for an external module (PIF) to keep the props coherent
      * with the attestation.
+     *
+     * The write is cached: a component's property is only reset when it differs from the target
+     * date, so this is safe to call on the per-attestation hot path (a single getprop comparison
+     * when nothing changed). Returns true when any property was rewritten, which lets callers log
+     * an override (e.g. PIF settling later than us) without spamming the log on every request.
      */
-    fun applyPatchLevelProps() {
-        val config = ConfigurationManager.getGlobalPatchLevel() ?: return
-        val systemValue = config.system ?: config.all ?: return
-        val vendorValue = config.vendor ?: config.all
+    fun applyPatchLevelProps(): Boolean {
+        val config = ConfigurationManager.getGlobalPatchLevel() ?: return false
+        val systemDate = (config.system ?: config.all)?.let { resolvePatchPropDate(it) }
+        val vendorDate = (config.vendor ?: config.all)?.let { resolvePatchPropDate(it) }
+        var changed = false
 
-        resolvePatchPropDate(systemValue)?.let { date ->
-            SystemLogger.info("patch prop: setting ro.build.version.security_patch to $date")
-            setProperty("ro.build.version.security_patch", date)
+        if (systemDate != null) {
+            val current = SystemProperties.get("ro.build.version.security_patch", "")
+            if (current != systemDate) {
+                SystemLogger.info(
+                    "patch prop: ro.build.version.security_patch '$current' -> '$systemDate'"
+                )
+                setProperty("ro.build.version.security_patch", systemDate)
+                changed = true
+            }
         }
-        vendorValue?.let { resolvePatchPropDate(it) }?.let { date ->
-            SystemLogger.info("patch prop: setting ro.vendor.build.security_patch to $date")
-            setProperty("ro.vendor.build.security_patch", date)
+        if (vendorDate != null) {
+            val current = SystemProperties.get("ro.vendor.build.security_patch", "")
+            if (current != vendorDate) {
+                SystemLogger.info(
+                    "patch prop: ro.vendor.build.security_patch '$current' -> '$vendorDate'"
+                )
+                setProperty("ro.vendor.build.security_patch", vendorDate)
+                changed = true
+            }
         }
+        return changed
     }
 
     /**

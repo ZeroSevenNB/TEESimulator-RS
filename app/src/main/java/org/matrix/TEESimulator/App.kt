@@ -49,12 +49,13 @@ object App {
             // Load the package configuration.
             ConfigurationManager.initialize()
 
-            // Mirror the configured patch levels into the system props so a verifier sees the same
-            // dates the attestation reports — no external PIF needed to keep them coherent.
-            AndroidDeviceUtils.applyPatchLevelProps()
-
-            // Initialize and start the appropriate keystore interceptors.
+            // Initialize and start the appropriate keystore interceptors FIRST, then mirror the
+            // configured patch levels into the system props — so a late-settling PIF (Zygisk prop
+            // injection) cannot win the race against our resetprop. The interceptors re-sync the
+            // props on every attestation request, so anything that rewrites them later gets
+            // corrected before a verifier reads the next certificate.
             initializeInterceptors()
+            AndroidDeviceUtils.applyPatchLevelProps()
 
             // Set up the device's boot key and hash, which are crucial for attestation.
             AndroidDeviceUtils.setupBootKeyAndHash()

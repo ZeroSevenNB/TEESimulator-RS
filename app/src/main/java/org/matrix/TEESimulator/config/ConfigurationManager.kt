@@ -10,6 +10,7 @@ import java.util.concurrent.ConcurrentHashMap
 import org.matrix.TEESimulator.attestation.DeviceAttestationService
 import org.matrix.TEESimulator.logging.SystemLogger
 import org.matrix.TEESimulator.pki.KeyBoxManager
+import org.matrix.TEESimulator.util.AndroidDeviceUtils
 
 /**
  * Manages application configuration, including which packages to process, what operation mode to
@@ -335,7 +336,12 @@ object ConfigurationManager {
                     file?.let { loadTargetPackages(it) }
                         ?: SystemLogger.warning("$TARGET_PACKAGES_FILE was deleted.")
                 PATCH_LEVEL_FILE ->
-                    file?.let { loadPatchLevelConfig(it) }
+                    file?.let {
+                        loadPatchLevelConfig(it)
+                        // Config changed → mirror the new dates into the system props so they stay
+                        // coherent with what future attestations will report (no reboot needed).
+                        AndroidDeviceUtils.applyPatchLevelProps()
+                    }
                         ?: SystemLogger.warning("$PATCH_LEVEL_FILE was deleted.")
                 // Any change to an XML file is assumed to be a keybox.
                 // The cache in KeyBoxManager will handle reloading it on its next use.

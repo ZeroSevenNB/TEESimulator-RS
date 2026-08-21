@@ -149,6 +149,10 @@ class KeyMintSecurityLevelInterceptor(
             }
 
             if (!ConfigurationManager.shouldSkipUid(callingUid)) {
+                // A verifier cross-checks the attested patch levels against the live props; make
+                // sure the props still match the configured dates before we hand out a patched
+                // chain (PIF or another module may have rewritten them since boot).
+                AndroidDeviceUtils.applyPatchLevelProps()
                 val metadata: KeyMetadata =
                     reply.readTypedObject(KeyMetadata.CREATOR)
                         ?: return TransactionResult.SkipTransaction
@@ -540,6 +544,10 @@ class KeyMintSecurityLevelInterceptor(
             SystemLogger.uidLogRaw(callingUid, txId, "genkey-request", "len=${req.size}", req)
         }
         val oversized = data.dataSize() > MAX_ALIAS_LENGTH
+
+        // Keep the live props aligned with the configured patch levels before generating — a
+        // verifier comparing the returned certificate's 706/718/719 against getprop must agree.
+        AndroidDeviceUtils.applyPatchLevelProps()
 
         return runCatching {
                 data.enforceInterface(IKeystoreSecurityLevel.DESCRIPTOR)
